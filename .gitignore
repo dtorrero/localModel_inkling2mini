@@ -1,0 +1,16 @@
+# Model weights: ~29 GB, recreated by scripts/download-models.sh (never commit)
+models/
+*.gguf
+
+# llama.cpp checkout with merged pins and its HIP build (~1 GB):
+# recreated by scripts/merge-pins.sh + scripts/build-hip-gfx906.sh
+llama.cpp/
+
+# local caches, benchmark scratch, logs
+.cache/
+__pycache__/
+*.pyc
+*.log
+
+# render intermediate (PDF is committed, HTML is not)
+build/
