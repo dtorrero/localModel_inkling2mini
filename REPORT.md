@@ -20,8 +20,8 @@ the GPU. The ceiling here is GCN's lack of matrix cores and the missing flash-at
 not the 1 TB/s HBM2 bus: decode uses roughly **52 GB/s (~5% of peak bandwidth) and ~280 GFLOPS
 (~2% of FP32 peak)**.
 It is comfortably usable for local chat, coding help and image Q&A with no cloud dependency.
-An end-to-end agent test through Cline — write code, run pytest, fix the implementation,
-write the notes — completed all five steps in 3 min 55 s (§7).
+An end-to-end agent test through Cline — write code, run pytest, write the notes — completed
+all five steps in 3 min 55 s (§7), with the transcript archived in `bench/agent-test/`.
 
 ---
 
@@ -287,9 +287,12 @@ flash attention can do — and it is still 2–3× faster than running the model
 
 ## 7. Use test: agentic coding through Cline
 
-Cline 4.1.27 (VSCodium) driving this server over the OpenAI-compatible API
-(`http://127.0.0.1:8080/v1`, context 16384, max output 4096, temperature 1.0), working
-directory `/home/sprinter/CodebergProjects/inkling2_testing`.
+Cline 4.1.27 (`saoudrizwan.claude-dev`, run inside VS Code) driving this server over the
+OpenAI-compatible API (`http://127.0.0.1:8080/v1`, context 16384, max output 4096,
+temperature 1.0) in `/home/sprinter/CodebergProjects/inkling2_testing`. Version 4.1.27 keeps
+its session store under `~/.cline/data/sessions/`; the transcript of this run (session
+`1795440466571_ki4p2`, 23 messages, 11 tool calls) is archived in
+`bench/agent-test/session.md` and `session.json`.
 
 **Task given to the agent** (verbatim, five ordered steps): create `math_utils.py` with
 `add(a, b)` and `divide(a, b)` (`ValueError` on a zero divisor, type hints, docstrings);
@@ -319,6 +322,24 @@ held as well — the `__pycache__`/`.pytest_cache` directories pytest normally l
 were removed. The three artefacts are archived verbatim in `bench/agent-test/`, so the run
 can be re-checked from this repository.
 
+**What the agent actually did** — 11 tool calls, every one a native `tool_call`:
+
+| # | Tool | Action |
+|---|---|---|
+| 1 | `run_commands` | `pwd && ls -la` — confirm the directory is empty |
+| 2 | `run_commands` | `which python3 && python3 --version && python3 -c 'import pytest; …'` |
+| 3–4 | `editor` | create `math_utils.py` and `test_math_utils.py` |
+| 5 | `run_commands` | `pytest test_math_utils.py -q` — **4 passed on the first attempt** |
+| 6–8 | `run_commands` | re-run pytest through `cat -A`, then a `subprocess` capture, then a string check, to copy the output byte-exactly into `NOTES.md` |
+| 9 | `run_commands` | write `NOTES.md` from a heredoc |
+| 10 | `run_commands` | `ls -la` and `cat NOTES.md` — verify steps 4 and 5 |
+| 11 | `run_commands` | `rm -rf __pycache__ .pytest_cache && ls -la` — drop the caches pytest had created |
+
+So the "3 pytest runs" recorded in `NOTES.md` are **one verification run plus two re-runs to
+satisfy step 4's "copy it verbatim"** — not a fix cycle; the implementation never needed
+changing. The model also flagged, unprompted, that the exact spacing of the progress-dots
+line depends on terminal width, so a "verbatim" copy can differ in whitespace elsewhere.
+
 **Per-request cost of the run** (reconstructed from the `slot print_timing` lines in the
 server log; turn 1 is Cline's system prompt plus tool schemas):
 
@@ -338,19 +359,21 @@ server log; turn 1 is Cline's system prompt plus tool schemas):
 
 11 turns · 5 260 prompt tokens prefilled · median decode 26.5 tok/s.
 
-**What it shows.** Native OpenAI tool calling is good enough for a real multi-step agent
-loop: file creation, terminal runs and self-correction all ran through `tool_calls`, with no
-custom prompting or XML parsing fallback. The 3 637-token system prompt is the dominant
-prefill cost (≈12 s to first token); KV reuse made the ten follow-up turns cheap (40–220
-tok/s on their small deltas). At a median 26.5 tok/s a turn takes 5–85 s, so a task of this
-size lands in the "slow but usable" bracket rather than the interactive one.
+**What it shows.** Native OpenAI tool calling is enough for a real multi-step agent loop:
+file creation, terminal work and verification all ran through `tool_calls`, with no custom
+prompting or XML parsing fallback. The two behaviours beyond the literal instructions are the
+interesting part — re-running the suite twice so the copied output is byte-exact, and deleting
+the `__pycache__`/`.pytest_cache` directories it had itself caused to keep the "exactly three
+files" constraint. The 3 637-token system prompt is the dominant prefill cost (≈12 s to first
+token); KV reuse made the ten follow-up turns cheap (40–220 tok/s on their small deltas). At a
+median 26.5 tok/s a turn takes 5–85 s, so a task of this size lands in the "slow but usable"
+bracket rather than the interactive one.
 
-**Caveats.** A single run of a single task. Cline's local task store on this machine has no
-record of the session (its history stops in August), so the model's step-by-step report and
-the terminal output could not be archived: the "3 pytest runs" figure is the model's own
-statement in `NOTES.md`. It is consistent with the artefacts — turn 5 alone generated 1 823
-tokens in 86.7 s, the shape of a run-fail-fix-rerun cycle — but it is not independently
-verified.
+**Caveats.** A single run of a single task, so this is an anecdote, not a pass rate. Because
+the suite passed on the first attempt, the run also says nothing about how the model recovers
+from failing tests: the prompt's explicit "fix the implementation, do not modify the tests"
+branch was never exercised. And Cline's system prompt plus tool schemas (3 637 tokens) consume
+a quarter of the 16k window before any user input arrives.
 
 ---
 
@@ -399,4 +422,4 @@ Other profiles: `MODEL=UD-Q4_K_XL CPU_MOE=1`, `NCMOE=12 MODEL=UD-Q4_K_XL`, `NO_D
 | `/tmp/llamabench.log` | `llama-bench` tables (baseline, context scaling, KV types, FA off) |
 | `/tmp/ctxladder.log`, `/tmp/hybrid.csv` | VRAM ladder and `--n-cpu-moe` sweep |
 | `/tmp/inkling.log` | per-request `slot print_timing` blocks, including the 11-turn Cline session of §7 |
-| `bench/agent-test/` | the three artefacts the agent produced in that Cline run, archived verbatim |
+| `bench/agent-test/` | the three artefacts the agent produced in that Cline run, plus `session.md` / `session.json` (the archived transcript) |

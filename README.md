@@ -152,9 +152,9 @@ results, analysis); raw rows in `bench/results.csv`. Headline numbers on this bo
 * vision verified through `mmproj-F16.gguf` (62 tok/s prefill for a 128×128 image);
 * the model is a reasoning model — answers land in `reasoning_content` first and in
   `content` once it stops thinking, so allow enough `max_tokens`;
-* an agentic coding task through Cline (write code → run pytest → fix the
-  implementation → write notes) completed all five steps in 3 min 55 s —
-  `REPORT.md` §7, including the per-turn token cost.
+* an agentic coding task through Cline (write code → run pytest → write notes)
+  completed all five steps in 3 min 55 s on the first try — `REPORT.md` §7 has the
+  per-turn token cost, and the transcript is archived under `bench/agent-test/`.
 
 ## Operating notes
 
