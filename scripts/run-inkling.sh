@@ -83,9 +83,20 @@ elif [[ "${CPU_MOE:-0}" == "1" ]]; then
     ARGS+=(--cpu-moe)
 fi
 
+# Refuse to start a second copy. The model commits ~16.3 GB of the 17.2 GB card,
+# so a second instance either fails to allocate or makes llama.cpp wait for
+# memory (load time goes from ~3 s to ~15 s). Override with FORCE=1.
+if pgrep -x llama-server >/dev/null 2>&1 && [[ "${FORCE:-0}" != "1" ]]; then
+    echo "error: llama-server is already running (pid $(pgrep -x llama-server | paste -sd ' ' -))" >&2
+    echo "       stop it first:  pkill -x llama-server" >&2
+    echo "       or override:    FORCE=1 $0" >&2
+    exit 1
+fi
+
 echo "==> ${SERVER}"
 echo "==> model: ${MAIN}"
 echo "==> ctx ${CTX}, ngl ${NGL}, kv ${CTK}/${CTV}, http://${HOST}:${PORT}"
+echo "==> loading: wait for the 'listening on' line (~3 s warm, ~15 s if VRAM was just in use)"
 echo
 
 exec "${SERVER}" "${ARGS[@]}"

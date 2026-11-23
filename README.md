@@ -157,6 +157,9 @@ results, analysis); raw rows in `bench/results.csv`. Headline numbers on this bo
 * Stop the server with `pkill -x llama-server` (`pkill -f llama-server` also
   matches the shell that runs it).
 * Detach it with `setsid nohup ./scripts/run-inkling.sh >/tmp/inkling.log 2>&1 &`.
+* The launcher refuses to start while another `llama-server` is running
+  (a second copy starves the first of VRAM): stop it with `pkill -x llama-server`,
+  or pass `FORCE=1`.
 * The embedded web UI is intentionally disabled (`-DLLAMA_USE_PREBUILT_UI=OFF`):
   this tag derives the HF asset version from `LLAMA_BUILD_NUMBER` (= `b1`, which
   does not exist) and the `latest` fallback fails validation. Use any
