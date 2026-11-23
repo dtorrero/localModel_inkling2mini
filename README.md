@@ -51,6 +51,7 @@ scripts/run-inkling.sh         # launcher with env knobs
 scripts/make-report-pdf.sh    # REPORT.md -> REPORT.pdf (WeasyPrint, A4 + page numbers)
 scripts/md2html.py             # Markdown -> print-ready HTML (used by the PDF script)
 bench/bench_server.py          # end-to-end benchmark harness (writes bench/results.csv)
+bench/agent-test/              # the three files a Cline agent task produced (REPORT.md §7)
 REPORT.md                      # hardware/software/build/benchmark report
 REPORT.pdf                     # rendered report (6 pages, A4)
 BENCHMARK.md                   # first measurement pass (superseded by REPORT.md)
@@ -150,7 +151,10 @@ results, analysis); raw rows in `bench/results.csv`. Headline numbers on this bo
 * DSpark is roughly neutral at ~50% acceptance (+7% at 512 tokens, −4% at 2048);
 * vision verified through `mmproj-F16.gguf` (62 tok/s prefill for a 128×128 image);
 * the model is a reasoning model — answers land in `reasoning_content` first and in
-  `content` once it stops thinking, so allow enough `max_tokens`.
+  `content` once it stops thinking, so allow enough `max_tokens`;
+* an agentic coding task through Cline (write code → run pytest → fix the
+  implementation → write notes) completed all five steps in 3 min 55 s —
+  `REPORT.md` §7, including the per-turn token cost.
 
 ## Operating notes
 

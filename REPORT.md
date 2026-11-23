@@ -20,6 +20,8 @@ the GPU. The ceiling here is GCN's lack of matrix cores and the missing flash-at
 not the 1 TB/s HBM2 bus: decode uses roughly **52 GB/s (~5% of peak bandwidth) and ~280 GFLOPS
 (~2% of FP32 peak)**.
 It is comfortably usable for local chat, coding help and image Q&A with no cloud dependency.
+An end-to-end agent test through Cline — write code, run pytest, fix the implementation,
+write the notes — completed all five steps in 3 min 55 s (§7).
 
 ---
 
@@ -283,7 +285,76 @@ flash attention can do — and it is still 2–3× faster than running the model
 
 ---
 
-## 7. Limitations and next steps
+## 7. Use test: agentic coding through Cline
+
+Cline 4.1.27 (VSCodium) driving this server over the OpenAI-compatible API
+(`http://127.0.0.1:8080/v1`, context 16384, max output 4096, temperature 1.0), working
+directory `/home/sprinter/CodebergProjects/inkling2_testing`.
+
+**Task given to the agent** (verbatim, five ordered steps): create `math_utils.py` with
+`add(a, b)` and `divide(a, b)` (`ValueError` on a zero divisor, type hints, docstrings);
+create `test_math_utils.py` with four pytest cases; run `pytest -q` and fix the
+*implementation* (not the tests) until green; write `NOTES.md` with the verbatim pytest
+output, one sentence on the zero-divisor behaviour and the number of pytest runs; print a
+directory listing. Constraints: stdlib + pytest only, exactly three files, stop if impossible.
+
+**Outcome: all five steps completed** — 5 055 generated tokens, 3 min 55 s of model time.
+
+| Artefact | Lines | Verified |
+|---|---|---|
+| `math_utils.py` | 17 | `divide(1, 0)` raises `ValueError("cannot divide by zero")`; both functions typed and documented |
+| `test_math_utils.py` | 21 | the four requested cases, left unmodified |
+| `NOTES.md` | 16 | verbatim `4 passed in 0.01s`, zero-divisor sentence, "3 pytest runs" |
+
+Independent re-run of the suite, with caches disabled so nothing new is written:
+
+```
+$ PYTHONDONTWRITEBYTECODE=1 pytest -q -p no:cacheprovider
+....                                                                     [100%]
+4 passed in 0.01s
+```
+
+The directory holds exactly the three requested files, so the "no extra files" constraint
+held as well — the `__pycache__`/`.pytest_cache` directories pytest normally leaves behind
+were removed. The three artefacts are archived verbatim in `bench/agent-test/`, so the run
+can be re-checked from this repository.
+
+**Per-request cost of the run** (reconstructed from the `slot print_timing` lines in the
+server log; turn 1 is Cline's system prompt plus tool schemas):
+
+| Turn | Wall clock | Prompt tok | Prefill tok/s | Gen tok | Decode tok/s | Draft acc |
+|---|---|---|---|---|---|---|
+| 1 | 13:27:51 | **3637** | 304 | 75 | 30.6 | 74% |
+| 2 | 13:28:04 | 111 | 133 | 100 | 28.6 | 67% |
+| 3 | 13:28:09 | 81 | 131 | 513 | 33.0 | 86% |
+| 4 | 13:28:29 | 157 | 166 | 100 | 28.3 | 67% |
+| 5 | 13:28:34 | 83 | 126 | **1823** | 20.1 | 45% |
+| 6 | 13:30:08 | 89 | 40 | 258 | 26.2 | 60% |
+| 7 | 13:30:19 | 152 | 160 | 190 | 31.3 | 79% |
+| 8 | 13:30:26 | 109 | 141 | 674 | 26.5 | 60% |
+| 9 | 13:30:54 | 219 | 184 | 131 | 28.8 | 70% |
+| 10 | 13:31:00 | 407 | 219 | 326 | 25.3 | 56% |
+| 11 | 13:31:15 | 215 | 179 | 865 | 24.6 | 58% |
+
+11 turns · 5 260 prompt tokens prefilled · median decode 26.5 tok/s.
+
+**What it shows.** Native OpenAI tool calling is good enough for a real multi-step agent
+loop: file creation, terminal runs and self-correction all ran through `tool_calls`, with no
+custom prompting or XML parsing fallback. The 3 637-token system prompt is the dominant
+prefill cost (≈12 s to first token); KV reuse made the ten follow-up turns cheap (40–220
+tok/s on their small deltas). At a median 26.5 tok/s a turn takes 5–85 s, so a task of this
+size lands in the "slow but usable" bracket rather than the interactive one.
+
+**Caveats.** A single run of a single task. Cline's local task store on this machine has no
+record of the session (its history stops in August), so the model's step-by-step report and
+the terminal output could not be archived: the "3 pytest runs" figure is the model's own
+statement in `NOTES.md`. It is consistent with the artefacts — turn 5 alone generated 1 823
+tokens in 86.7 s, the shape of a run-fail-fix-rerun cycle — but it is not independently
+verified.
+
+---
+
+## 8. Limitations and next steps
 
 * **Perf level is untested.** `sudo rocm-smi --setperflevel high` could move decode from
   860 MHz to 1700 MHz; it needs root and was not available here. This is the first thing to
@@ -327,3 +398,5 @@ Other profiles: `MODEL=UD-Q4_K_XL CPU_MOE=1`, `NCMOE=12 MODEL=UD-Q4_K_XL`, `NO_D
 | `README.md` | setup, deviations from the Unsloth guide, operating notes |
 | `/tmp/llamabench.log` | `llama-bench` tables (baseline, context scaling, KV types, FA off) |
 | `/tmp/ctxladder.log`, `/tmp/hybrid.csv` | VRAM ladder and `--n-cpu-moe` sweep |
+| `/tmp/inkling.log` | per-request `slot print_timing` blocks, including the 11-turn Cline session of §7 |
+| `bench/agent-test/` | the three artefacts the agent produced in that Cline run, archived verbatim |
